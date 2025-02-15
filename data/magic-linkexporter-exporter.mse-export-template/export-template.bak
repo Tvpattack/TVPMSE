@@ -1,0 +1,118 @@
+mse version: 2.0.0
+short name: Link Exporter
+full name: TVP link exporter
+position hint: 009
+icon: icon.png
+version: 2018-01-11
+installer group: magic/Export/Name Check
+
+depends on:
+	package: magic.mse-game
+	version: 2008-08-08
+
+game: magic
+create directory: false
+file type: *.txt|*.txt|*.*|*.*
+
+####Split cards, DFC, and Image implementation by Fungustober
+
+
+option field:
+	type: text
+	name: image file extension
+	description: The common file extension for your links
+option field:
+	type: text
+	name: git file extension
+	description: The common git file extension for your links
+option field:
+	type: text
+	name: image path
+	description: The link that your images are at
+option field:
+	type: choice
+	name: link character processing
+	description: Choose how characters in names for link processing are handled
+	choice: none
+	choice: spaces are dashes and all other prohibited characters are removed
+	choice: standard link encoding (Spaces are %20)
+	choice: spaces are underscores and all other prohibited characters are removed
+
+script:
+	mana_script := 	replace@(match:"(2|H|W|U|B|R|G|S|C|F)/(W|U|B|R|G|S|C|F)", replace:{"\{"+_1+"/"+_2+"\}"})+
+	replace@(match:"(X|Y|Z|W|U|B|R|G|S|C|F)", in_context:"(?<!\{)(?<!/)<match>", replace:{"\{"+_1+"\}"})+
+	replace@(match:"([1-9][0-9])", in_context:"(?<!\{)(?<!/)<match>", replace:{"\{"+_1+"\}"})+
+	replace@(match:"([0-9])", in_context:"(?<!\{)(?<!/)<match>(?!})", replace:{"\{"+_1+"\}"})
+	card_rarity := 
+		if card.rarity == "mythic rare" then "mythic" else if card.rarity == "basic land" then "common" else card.rarity
+	
+
+	apos_fix := replace@(match:"’", replace:"'")
+	trail_fix := replace@(match:" +$", replace:"")
+	clean_names := trail_fix(apos_fix(remove_tags(input)))
+
+	exporter_name_filter := filter_text@(match:"!exporte?r?name [^\n]+")
+	exporter_name_grabber := replace@(match:"!exporte?r?name ", replace:"")
+	
+	exporter_backname_filter := filter_text@(match:"!backf?a?c?e?name [!\n]+")
+	exporter_backname_grabber := replace@(match:"!backf?a?c?e?name " replace:"")
+	
+	dash_spaces := replace@(match:" ", replace:"-")+
+	replace@(match:"’", replace:"")+
+	replace@(match:"'", replace:"")+
+	replace@(match:",", replace:"")+
+	replace@(match:"&", replace:"")+
+	replace@(match:"—", replace:"")
+	
+	#heres where the standard link encoding goes
+	standard_encoding := replace@(match:" ", replace:"%20")+
+	replace@(match:"’", replace:"%E2%80%99")+
+	replace@(match:"'", replace:"%27")+
+	replace@(match:",", replace:"%2c")+
+	replace@(match:"&", replace:"%26")+
+	replace@(match:"—", replace:"%E2%80%94")
+	
+	score_spaces := replace@(match:" ", replace:"_")+
+	replace@(match:"’", replace:"")+
+	replace@(match:"'", replace:"")+
+	replace@(match:",", replace:"")+
+	replace@(match:"&", replace:"")+
+	replace@(match:"—", replace:"")
+	
+	process_name_for_links :=
+		if options.link_character_processing == "standard link encoding (Spaces are %20)" then standard_encoding(trail_fix(remove_tags(input)))
+		else if options.link_character_processing == "spaces are dashes and all other prohibited characters are removed" then dash_spaces(trail_fix(remove_tags(input)))
+		else if options.link_character_processing == "spaces are underscores and all other prohibited characters are removed" then score_spaces(trail_fix(remove_tags(input)))
+		else trail_fix(remove_tags(input))
+	
+	
+	pngSetter := if options.image_file_extension == "" then ".png" else options.image_file_extension
+	gitSetter := pngSetter+options.git_file_extension
+
+	card_name := 
+		test := exporter_name_grabber(exporter_name_filter(card.notes))
+		clean_names(if test != "" then test else card.name)
+	
+	
+
+
+
+
+	write_card := 
+		"    \{
+		" +
+		"            \"en\": \""+options.image_path+process_name_for_links(card_name())+gitSetter+"\"
+		"+
+		"    \},
+		"
+	
+	
+	determine_shape := {
+		if contains(card.shape, match:"token") then ""
+		else if card.shape == "double faced" then write_double()
+		else if contains(card.shape, match:"split") then write_split()
+		else write_card()
+		}
+	write_cards := {
+		for each key:card in cards do determine_shape()
+	}

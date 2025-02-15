@@ -1,0 +1,72 @@
+mse version: 2.0.0
+short name: Cube Artisan
+full name: Cube Artisan
+position hint: 009
+icon: icon.png
+version: 2018-01-11
+installer group: magic/Export/Name Check
+
+depends on:
+	package: magic.mse-game
+	version: 2008-08-08
+
+game: magic
+create directory: false
+file type: *.txt|*.txt|*.*|*.*
+
+option field:
+	type: choice
+	name: export two part
+	description: How to export two part cards (DFCs, Adventures, etc).
+	choice: On the same line as first face
+	choice: On the next line as first face
+	choice: Don't export second face
+script:
+	export_backs := {options.export_two_part != "Don't export second face"}
+	break_backs := {options.export_two_part == "On the next line as first face"}
+	apos_fix := replace@(match:"’", replace:"'")
+	trail_fix := replace@(match:" +$", replace:"")
+	clean_names := {trail_fix(apos_fix(remove_tags(input)))}
+
+	canon_name_filter := filter_text@(match:"!canoncard [^\n!]+")
+	canon_name_grabber := replace@(match:"!canoncard ", replace:"")
+	canon_card_name := {
+		test := canon_name_grabber(canon_name_filter(card.notes))
+		exported := exporter_name_grabber(exporter_name_filter(card.notes))
+		clean_names(if test != "" then test else if exported != "" then exported else card.name)
+	}
+	exporter_name_filter := filter_text@(match:"!exporte?r?name [^\n]+")
+	exporter_name_grabber := replace@(match:"!exporte?r?name ", replace:"")
+	card_name := { 
+		test := exporter_name_grabber(exporter_name_filter(card.notes))
+		clean_names(if test != "" then test else card.name)
+	}
+	tags_filter := filter_text@(match:"!tags [^\n!]+")
+	tags_grabber := replace@(match:"!tags ", replace:"")
+	pull_breaks := replace@(match:"\n", replace:"\\\\n ")
+	write_header := {
+		"" + 
+		"Name	"+
+		"CMC	"+
+		"Type	"+
+		"Color	"+
+		"Tags	"+
+		"Rarity	"+
+		"Override Name	"+
+		"Image URL	"
+		+"\n"
+	}
+	write_card := {
+		"" + 
+		canon_card_name() + "	"+
+		cmc(card.casting_cost) + "	"+
+		card.type + "	"+
+		sort_text(card.casting_cost, order: "<WUBRG>") + "	"+
+		tags_grabber(tags_filter(card.notes)) + "	"+
+		card.rarity + "	"+
+		card_name() + "	"+
+		"	"
+		+"\n"
+	}
+	write_cards := for each card in cards do write_card()
+	to_string(to_text(write_header() + write_cards))

@@ -1,0 +1,6 @@
+mse version: 2.0.0
+version: 2022-10-10
+short name: star
+installer group: magic/overlays/star
+position hint: 0099
+icon: overlay.png

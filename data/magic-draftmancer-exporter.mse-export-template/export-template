@@ -1,0 +1,376 @@
+mse version: 2.0.0
+short name: Draftmancer
+full name: Draftmancer
+position hint: 009
+icon: icon.png
+version: 2018-01-11
+installer group: magic/Export/Name Check
+
+depends on:
+	package: magic.mse-game
+	version: 2008-08-08
+
+game: magic
+create directory: true
+file type: *.txt|*.txt|*.*|*.*
+
+####Split cards, DFC, and Image implementation by Fungustober
+
+
+option field:
+	type: boolean
+	name: export images
+	description: check if a user wants to export images in the first place
+option field:
+	type: text
+	name: image file extension
+	description: The common file extension for your links
+option field:
+	type: text
+	name: git file extension
+	description: The common git file extension for your links
+option field:
+	type: text
+	name: set code
+	description: The set code for this file.
+option field:
+	type: text
+	name: image path
+	description: The link that your images are at
+option field:
+	type: choice
+	name: link character processing
+	description: Choose how characters in names for link processing are handled
+	choice: none
+	choice: spaces are dashes and all other prohibited characters are removed
+	choice: standard link encoding (Spaces are %20)
+	choice: spaces are underscores and all other prohibited characters are removed
+option field:
+	type: boolean
+	name: different DFC image path
+	description: Use a different image path for DFC
+option field:
+	type: text
+	name: DFC image path
+	description: The link that your DFC images are at
+option field:
+	type: choice
+	name: DFC link processing
+	description: Choose how characters in names for link processing for DFCs are handled.
+	choice: none
+	choice: spaces are dashes and all other prohibited characters are removed
+	choice: standard link encoding (Spaces are %20)
+	choice: spaces are underscores and all other prohibited characters are removed
+option field:
+	type: text
+	name: mythic count
+	description: How many of each mythic can show up in draft
+option field:
+	type: text
+	name: rare slot
+	description: total cards in rare slot
+option field:
+	type: text
+	name: rare count
+	description: How many of each mythic can show up in draft
+option field:
+	type: text
+	name: uncommon slot
+	description: total cards in uncommon slot
+option field:
+	type: text
+	name: uncommon count
+	description: How many of each uncommon you want in your exported file
+option field:
+	type: text
+	name: common slot
+	description: total cards in common slot
+option field:
+	type: text
+	name: common count
+	description: How many of each common you want in your exported file
+option field:
+	type: text
+	name: basic slot
+	description: total cards in basic slot
+option field:
+	type: text
+	name: basic count
+	description: How many of each basic you want in your exported file
+
+############Evergreen Functions
+script:
+	#export_backs := {options.export_two_part != "Don't export second face"}
+	#break_backs := {options.export_two_part == "On the next line as first face"}
+	fix_tm := replace@(match:"™", replace:"TM")
+	fixed_set_code := {fix_tm(options.set_code)}
+	apos_fix := replace@(match:"’", replace:"'")
+	trail_fix := replace@(match:" +$", replace:"")
+	clean_names := {trail_fix(apos_fix(remove_tags(input)))}
+
+	is_token := {contains(card.shape, match:"token") or contains(card.shape, match:"emblem") or contains(card.shape, match:"rulestip") }
+
+	mana_script := 	replace@(match:"(2|H|W|U|B|R|G|S|C|F)/(W|U|B|R|G|S|C|F)", replace:{"\{"+_1+"/"+_2+"\}"})+
+	replace@(match:"(X|Y|Z|W|U|B|R|G|S|C|F)", in_context:"(?<!\{)(?<!/)<match>", replace:{"\{"+_1+"\}"})+
+	replace@(match:"([1-9][0-9])", in_context:"(?<!\{)(?<!/)<match>", replace:{"\{"+_1+"\}"})+
+	replace@(match:"([0-9])", in_context:"(?<!\{)(?<!/)<match>(?!})", replace:{"\{"+_1+"\}"})
+	card_rarity := {
+		if card.rarity == "mythic rare" then "mythic" else if card.rarity == "basic land" then "common" else card.rarity
+	}
+
+	exporter_name_filter := filter_text@(match:"!exporte?r?name [^\n]+")
+	exporter_name_grabber := replace@(match:"!exporte?r?name ", replace:"")
+	
+	exporter_backname_filter := filter_text@(match:"!back(face)?name [^!\n]+")
+	exporter_backname_grabber := replace@(match:"!back(face)?name " replace:"")
+	
+	dash_spaces := replace@(match:" ", replace:"-")+
+	replace@(match:"’", replace:"")+
+	replace@(match:"'", replace:"")+
+	replace@(match:",", replace:"")+
+	replace@(match:"&", replace:"")+
+	replace@(match:"—", replace:"")
+	
+	#heres where the standard link encoding goes
+	standard_encoding := replace@(match:" ", replace:"%20")+
+	replace@(match:"’", replace:"%E2%80%99")+
+	replace@(match:"'", replace:"%27")+
+	replace@(match:",", replace:"%2c")+
+	replace@(match:"&", replace:"%26")+
+	replace@(match:"—", replace:"%E2%80%94")
+	
+	score_spaces := replace@(match:" ", replace:"_")+
+	replace@(match:"’", replace:"")+
+	replace@(match:"'", replace:"")+
+	replace@(match:",", replace:"")+
+	replace@(match:"&", replace:"")+
+	replace@(match:"—", replace:"")
+	
+	process_name_for_links :={
+		if options.link_character_processing == "standard link encoding (Spaces are %20)" then standard_encoding(trail_fix(remove_tags(input)))
+		else if options.link_character_processing == "spaces are dashes and all other prohibited characters are removed" then dash_spaces(trail_fix(remove_tags(input)))
+		else if options.link_character_processing == "spaces are underscores and all other prohibited characters are removed" then score_spaces(trail_fix(remove_tags(input)))
+		else trail_fix(remove_tags(input))
+	}
+	
+	process_name_for_DFC_links :={
+		if options.DFC_link_processing == "standard link encoding (Spaces are %20)" then standard_encoding(trail_fix(remove_tags(input)))
+		else if options.DFC_link_processing == "spaces are dashes and all other prohibited characters are removed" then dash_spaces(trail_fix(remove_tags(input)))
+		else if options.DFC_link_processing == "spaces are underscores and all other prohibited characters are removed" then score_spaces(trail_fix(remove_tags(input)))
+		else trail_fix(remove_tags(input))
+	}
+	
+	pngSetter := if options.image_file_extension == "" then ".png" else options.image_file_extension
+	gitSetter := pngSetter+options.git_file_extension
+
+	card_name := { 
+		test := exporter_name_grabber(exporter_name_filter(card.notes))
+		clean_names(if test != "" then test else card.name)
+	}
+	
+	back_name := {
+		test := exporter_backname_grabber(exporter_backname_filter(card.notes))
+		clean_names(if test != "" then test else card.name_2)
+	}
+	
+	corrected_card_number := { if exporter_num_grabber(exporter_num_filter(card.notes)) != "" then exporter_num_grabber(exporter_num_filter(card.notes)) else if card.custom_card_number != "" then trim_zeroes(card.custom_card_number) else card_number() }
+
+
+	write_header := {
+		"[CustomCards]" +
+		"
+		["
+	}
+
+	dfc_images := {
+		if options.different_DFC_image_path then options.DFC_image_path+process_name_for_DFC_links(card_name()) 
+		else options.image_path+process_name_for_links(card_name())
+	}
+	
+	dfc_images_back := {
+		if options.different_DFC_image_path then options.DFC_image_path+process_name_for_DFC_links(back_name()) 
+		else options.image_path+process_name_for_links(back_name())
+	}
+
+	write_double := {
+		"    \{
+		" +
+		#name (front side name)
+		"        \"name\": \""+card_name()+"\",
+		" +
+		#mana cost (front side mana cost)
+		"        \"mana_cost\": \""+mana_script(card.casting_cost)+"\",
+		" +
+		#type (front side type)
+		"        \"type\": \""+card.type+"\",
+		" +
+		#image uris (front side image--how do we make this one work)
+		"        \"image_uris\": \{
+		" +
+		"            \"en\": \""+dfc_images()+gitSetter+"\"
+		" +
+		"        \},
+		" +
+		#printed names (front side name)
+		"        \"printed names\": \{
+		" +
+		"            \"en\": \""+card_name()+"\"
+		" +
+		"        \},
+		" +
+		#back (sub section, holds all of the info for the back)
+		"        \"back\": \{
+		" +
+		    #name (back side name)
+		"            \"name\": \""+back_name()+"\",
+		" +
+			#printed names (back side name)
+		"            \"printed_names\": \{
+		" +
+		"                \"en\": \""+back_name()+"\"
+		" +
+		"            \},
+		" +
+			#image uris (back side image--how do we make this one work)
+		"            \"image_uris\": \{
+		" +
+		"                \"en\": \""+dfc_images_back()+gitSetter+"\"
+		" +
+		"            \},
+		" +
+			#type (back side type)
+		"            \"type\": \""+ card.type_2 +"\"
+		" +
+		"        \}
+		" +
+		"    \},
+		"
+	}
+	
+	write_split := {
+		"    \{
+		" +
+		"        \"name\": \""+card_name()+" // "+back_name()+"\",
+		" +
+		"        \"mana_cost\": \""+mana_script(card.casting_cost)+" // "+mana_script(card.casting_cost_2)+"\",
+		" +
+		"        \"layout\": \"split\",
+		" +
+		"        \"rarity\": \""+card_rarity()+"\",
+		" +
+		"        \"type\": \""+ card.type +"\",
+		" +
+		"        \"image_uris\": \{
+		" +
+		"            \"en\": \""+options.image_path+process_name_for_links(card_name())+gitSetter+"\"
+		" +
+		"        \}
+		" +
+		"    \},
+		"
+	}
+
+	write_card := {
+		"    \{
+		" + 
+		"        \"name\": \""+card_name()+"\",
+		" +
+		"        \"rarity\": \""+card_rarity()+"\",
+		"+
+		"        \"mana_cost\": \""+ mana_script(card.casting_cost) +"\",
+		" +
+		"        \"type\": \""+ card.type +"\",
+		" +
+		"        \"image_uris\": \{
+		" +
+		"            \"en\": \""+options.image_path+process_name_for_links(card_name())+gitSetter+"\"
+		"+
+		"        \}
+		"+
+		"    \},
+		"
+	}
+	
+	write_footer := {
+		"]
+		"
+	}
+
+	write_basic_num :={
+		if options.basic_count == "" then "36 " else options.basic_count+" "
+	}
+	write_common_num :={
+		if options.common_count == "" then "30 " else options.common_count+" "
+	}
+	write_uncommon_num :={
+		if options.uncommon_count == "" then "9 " else options.uncommon_count+" "
+	}
+	write_rare_num :={
+		if options.rare_count == "" then "3 " else options.rare_count+" "
+	}
+	write_mythic_num :={
+		if options.mythic_count == "" then "1 " else options.mythic_count+" "
+	}
+
+	write_basics := {
+		for each card in cards do if card.rarity == "basic land" and is_token() != true and contains(card.notes, match:"!null") != true then "	"+write_basic_num()+card_name()+"
+		"
+		else ""
+	}
+
+	
+	write_commons := {
+		for each card in cards do if card.rarity == "common" and is_token() != true and contains(card.notes, match:"!null") != true  then "	"+write_common_num()+card_name()+"
+		"
+		else ""
+	}
+
+	write_uncommons := {
+		for each card in cards do if card.rarity == "uncommon" and contains(card.notes, match:"!null") != true  then "	"+write_uncommon_num()+card_name()+"
+		"
+		else ""
+		
+	}
+
+	write_rares := {
+		for each card in cards do if card.rarity == "rare" and contains(card.notes, match:"!null") != true  then "	"+write_rare_num()+card_name()+"
+		"
+		else ""
+		
+	}
+
+	write_mythics := {
+		for each card in cards do if card.rarity == "mythic rare" and contains(card.notes, match:"!null") != true  then "	"+write_mythic_num()+card_name()+"
+		"
+		else ""
+		
+	}
+
+	write_booster := {
+		"[RareSlot("+ if options.rare_slot == "" then "1 " else options.rare_slot+")]
+		"+ write_rares() + write_mythics()+
+		"[UncommonSlot("+ if options.uncommon_slot == "" then "3 " else options.uncommon_slot+")]
+		"+ write_uncommons()+
+		"[CommonSlot("+ if options.common_slot == "" then "10 " else options.common_slot+")]
+		"+ write_commons()+
+		"[BasicSlot("+ if options.basic_slot == "" then "1 " else options.basic_slot+")]
+		"+ write_basics()
+	}
+
+	determine_shape := {
+		#if contains(card.shape, match:"token") then write_token()
+		if contains(card.notes, match:"!null") then ""
+		else if card.shape == "double faced" or card.shape == "transform double faced" or card.shape == "modal double faced" or card.shape == "double faced planeswalker" or back_name() != "" then write_double()
+		else if contains(card.shape, match:"split") then write_split()
+		else write_card()
+	}
+	
+	remove_final_comma := {
+		substring(input, end:length(input)-3)+"
+		"
+	}
+
+	write_images := if options.export_images == "no" then "" else for each card in cards do write_image_file(card, file:card_name()+(pngSetter))
+	write_cards := for each key:card in cards do determine_shape()
+	main_cards := to_text(write_header() + remove_final_comma(write_cards) + write_footer())
+	to_string(to_text(main_cards+ write_booster()))

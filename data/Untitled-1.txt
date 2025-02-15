@@ -1,0 +1,23 @@
+Ordered Priority:
+
+Highest Priority
+- FOE
+- MTR
+- Battlebrew
+
+Medium Priority
+- Hidden Info Set
+- Limited Format YGO
+- Myrrynth's Sky Islands Server
+- Drawing
+
+Lower Priority
+- Independant Stories
+- Writing
+- Overworld Project Server
+
+Backburner
+- CuMTG Stories
+- Curated YGO
+- Custom CCG
+- LOB Speed Rework

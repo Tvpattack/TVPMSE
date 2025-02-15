@@ -1,0 +1,15 @@
+mse version: 2.0.0
+short name: Silver Red Defenders
+full name: Legend of Blue Eyes — Silver Red Defenders
+position hint: 009
+icon: icon.png
+version: 2018-01-11
+
+depends on:
+	package: magic.mse-game
+	version: 2008-08-08
+
+game: magic
+create directory: true
+file type: *.txt|*.txt|*.*|*.*
+

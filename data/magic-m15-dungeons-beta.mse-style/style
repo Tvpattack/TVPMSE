@@ -1,0 +1,2882 @@
+﻿mse version: 2.0.0
+game: magic
+short name: Dungeons
+full name: AFR Dungeons
+icon: card-sample.png
+installer group: magic/m15 style/normal cards
+position hint: 099
+
+version: 2021-06-25
+depends on:
+	package: magic.mse-game
+	version: 2014-06-25
+
+card width: 375
+card height: 523
+card dpi: 150
+#################################
+##### Blank from CardConjurer
+init script:
+	max_len := 16
+	max_hei := 19
+	white := to_image("walls.png")
+	black := to_image("base.png")
+	
+	template_prefix := [card: "", grid:"grid/" wall:"wall_texture/" light:"wall_texture/" dark:"wall_texture/" ]
+	template_suffix := [card: "card.png" grid:"grid.png" wall:"wall.png" light:"light.png" dark:"dark.png" ]
+	template      := { template_prefix[type] + input + template_suffix[type] }
+	land_template := { template_prefix[type] + (if input == "a" then "c" else input) + template_suffix[type] }
+
+	grid_background := { color_background(type:"grid",     base_hybrid:card_hybrid) }
+	walls_background := { color_background(type:"wall",     base_hybrid:card_hybrid) }
+	light_background := { color_background(type:"light",     base_hybrid:card_hybrid) }
+	dark_background := { color_background(type:"dark",     base_hybrid:card_hybrid) }
+
+	base_filter := text_filter
+	text_filter :=
+		text_filter +
+		remove_tag@(tag: "<font") +
+		replace@(
+			match:"^([^\n]+)(\n|[ ][ ])(.*)$"
+			replace:"<font:Beleren Bold>\\1</font>\\2\\3"
+		)
+	card_shape := {"token"}
+	shrink_name := {if styling.shrink_name_text != "" then to_int(styling.shrink_name_text) else 0 }
+	note_cleaner := replace@(match:"\\+", replace:"")
+	num_cleaner := replace@(match:"[0-9]", replace:"")
+	font_size := {if styling.font_size != "" then styling.font_size else 12}
+	mana_t := {
+		if      styling.tap_symbol == "old"        then "old"
+		else if styling.tap_symbol == "diagonal T" then "older"
+		else                                            "new"
+	}
+	
+	# Use guild mana symbols?
+	guild_mana := { styling.use_guild_mana_symbols }
+	transfer_levels := {false}
+	
+	
+	line_lanes := {
+		line := min(max(1, input), max_level())
+		min(max(1,to_int(pull_comma_array(styling.room_counts, cell:line-1, end:false))),3)
+	}
+	max_level := {min(7,max(3, length(filter_text(styling.room_counts, match:"[0-9]"))))}
+	wall_crop := {crop(input, height:387, width:327, offset_x:x, offset_y:offset)}@(x:0)
+	line_offset := {
+		off := for x from 1 to input do line_height(x)
+		to_int(off)
+	}
+	line_height := {
+		if input == 0
+			then 0
+		else 20*max(2,min(max(2,to_int(pull_comma_array(styling.room_heights, cell:input-1)))+excess_height()[input-1],15))
+	}
+	given_height := {
+		nums := split_text(replace(styling.room_heights, match:",$", replace:""), match:",")
+		val := for x from 0 to length(nums)-1 do min(15,max(2,to_int(nums[x])))
+		miss := max_level() - length(nums)
+		if miss > 0 then val := val + 2*miss
+		val
+	}
+	excess_height := {
+		ml := max_level()
+		one_off := 0
+		back_off := 0
+		exc := 19 - given_height()
+		per := to_int(exc / ml)
+		per2 := to_int(exc / (ml-1))
+		#if per2 == 0 and exc == 5 then
+		#	back_off := -1
+		#if back_off == -1 then
+		#	per2 := to_int(exc / (ml-2))
+		#if per2 == 0 then
+		#	back_off := 0
+		if per2 > per then
+			one_off := -1
+		if per2 > per then
+			per := per2
+		rem := exc - per*ml - one_off
+		bump := for x from 1 to 8 do [per+(if x == ml then rem+back_off else if x == 1 then one_off else 0)]
+		bump
+	}
+	max_start := {if styling.reminder_box then 95 else 70}
+	box_x := {
+		arr := span_array(y)
+		if x >= length(arr) or arr[x-1] == 16 then 0 else 20*arr[x-1]+29
+	}
+	box_y := {
+		if y == 1 then max_start()
+		else max_start()+line_offset(y-1)
+	}
+	default_w := [
+		[""],
+		["", 16, 0, 0],
+		["", 8, 8, 0],
+		["", 5, 6, 5]
+	]
+	box_w := {
+		if y == 0 then y := 1
+		lanes := line_lanes(y)
+		val := if y > max_level() then 0
+			else if use_fast() then default_w[lanes][x]
+			else if x != 3 then to_int(pull_comma_array(styling["level_"+y+"_custom_widths"], cell:x-1, end:false, default:default_w[lanes][x]))
+			else max_len - to_int(pull_comma_array(styling["level_"+y+"_custom_widths"], cell:0, end:false, default:default_w[lanes][1])) - to_int(pull_comma_array(styling["level_"+y+"_custom_widths"], cell:1, end:false, default:default_w[lanes][2]))
+		max(0,20*val-3)
+	}
+
+	long_box := {
+		if y == 1 or y == 8
+			then false
+		else contains(styling["level_"+y+"_long_rooms"], match:to_string(x))
+	}
+	dead_box := {
+		if y == 1 or y > 8
+			then false
+		else (contains(styling["level_"+(y-1)+"_dead_ends"], match:to_string(x)))
+	}
+	box_h := {
+		multi := 1
+		if long_box(x:x, y:y) then multi := 0
+		h := for n from y to 7 do (
+			if n > y and not long_box(x:x, y:n) then multi := 0
+			if multi == 0 then n := 7
+			multi*line_height(n)
+		)
+		h
+	}
+	arrow_direction := {
+		if long_box(x:x, y:y+1)
+			then "none"  ## Oubliette room
+		else if dead_box(x:x, y:y+1)
+			then "none"
+		else if dead_box(x:x, y:y+2)
+			then "updown"
+		else "down"
+	}
+	door_direction := {
+		lanes := line_lanes(y)
+		if not styling.arrows then "none"
+		if x == 5 then
+			if lanes == 1 and contains(styling["level_"+y+"_exits"], match:"2") then "right"
+			else if lanes == 2 and contains(styling["level_"+y+"_exits"], match:"3") then "right"
+			else if lanes == 3 and contains(styling["level_"+y+"_exits"], match:"4") then "right"
+			else "none"
+		else if not contains(styling["level_"+y+"_exits"], match:x) then "none"
+		else if x == 1 then "left"
+		else if x > line_lanes(y) then "right"
+		else "leftright"
+	}
+	dir_map := {
+		["11": 168,
+		"12": 88,
+		"13": 64,
+		"14": 58,
+		"15": -10,
+		"21": -10,
+		"22": 248,
+		"23": 168,
+		"24": 138,
+		"25": -10,
+		"31": -10,
+		"32": -10,
+		"33": 272,
+		"34": 198,
+		"35": -10,
+		"45": -10,
+		"44": 278,
+		"43": -10,
+		"42": -10,
+		"41": -10,
+		]
+	}
+	arrow_x := {
+		arr := sort_list(join_arrays(a1:span_array(y), a2:span_array(y+1)), remove_duplicates:true)
+		if y >= max_level() or x >= length(arr)
+			then 0
+		else if use_fast()
+			then dir_map()[to_string(x)+to_string(length(arr)-1)]+10
+		else ((arr[x-1]+arr[x])*10)+18+door_offset(x:x, y:y)
+	}
+	arrow_y := {
+		max_start() + line_offset(y) - 10
+	}
+	door_x_map := {
+		["11": 17,
+		"12": 337,
+		"15": 337,
+		"21": 17,
+		"22": 176,
+		"23": 337,
+		"24": 337,
+		"25": 337,
+		"31": 17,
+		"32": 117,
+		"33": 237,
+		"34": 237,
+		"35": 337,
+		]
+	}
+	door_x := {
+		lanes := line_lanes(y)
+		if y > max_level() or door_direction(x:x, y:y) == "none" then 0 else door_x_map()[to_string(lanes)+to_string(x)] or else 0
+	}
+	door_y := {
+		arrow_y(y:y-1) + (0.5*line_height(y))
+	}
+	
+
+	# array of where walls are placed in a lane
+	span_array := {
+		if input == 0 then input := 1
+		if input > max_level() then input := max_level()
+		l1 := round_up(box_w(x:1, y:input)/20)
+		l3 := round_up(box_w(x:3, y:input)/20)
+		[0, l1, max_len-l3, max_len]
+	}
+	# make sure span_arrays are min length 3, fill extras with max len
+	walls_image_slow := {
+		s := if input == "" then "" else input
+		lanes := dungeon_lanes(s:s)
+		walls := dungeon_walls(s:s)
+		mask := masked_blend(dark:walls, light:white, mask:lanes)
+		dungeon := set_mask(image:if s == "shadow/" then "base.png" else walls_background(), mask:mask)
+		if s == "" then dungeon := add_texture(dungeon, lanes:lanes, walls:walls)
+		dungeon
+	}
+	add_texture := {
+		highlight_mask := masked_blend(dark:masked_blend(dark:white, light:"new_masks/light_lines.png", mask:lanes), light:white, mask:walls)
+		shadow_mask := masked_blend(dark:masked_blend(dark:white, light:"new_masks/dark_lines.png", mask:lanes), light:white, mask:walls)
+		outline_mask := masked_blend(dark:white, light:"new_masks/light_stripes.png", mask:walls)
+		dungeon := masked_blend(light:dungeon, dark:light_background(card.card_color), mask:highlight_mask)
+		dungeon := masked_blend(light:dungeon, dark:dark_background(card.card_color), mask:shadow_mask)
+		dungeon := masked_blend(light:dungeon, dark:light_background(card.card_color), mask:outline_mask)
+		dungeon
+	}
+	# make horizontal mask
+	dungeon_lanes := {
+		ml := max_level()
+		lanes := add_level_lanes(img:black, line:0, s:s)
+		if ml >= 1 then lanes := add_level_lanes(img:lanes, line:1, s:s)
+		if ml >= 2 then lanes := add_level_lanes(img:lanes, line:2, s:s)
+		if ml >= 3 then lanes := add_level_lanes(img:lanes, line:3, s:s)
+		if ml >= 4 then lanes := add_level_lanes(img:lanes, line:4, s:s)
+		if ml >= 5 then lanes := add_level_lanes(img:lanes, line:5, s:s)
+		if ml >= 6 then lanes := add_level_lanes(img:lanes, line:6, s:s)
+		if ml >= 7 then lanes := add_level_lanes(img:lanes, line:7, s:s)
+		lanes
+	}
+	add_level_lanes := {
+		ml := max_level()
+		walls := sort_list(join_arrays(a1:span_array(line), a2:span_array(line+1)), remove_duplicates:true)
+		len := length(walls)
+		y := 380-line_offset(line)
+		baseline := wall_crop("new_masks/"+s+"lane.png", offset:y)
+		img := masked_blend(dark:img, light:white, mask:baseline)
+		# skip dead ends, open oubliettes, open doors on rest
+		if len >= 2 and not contains(styling["level_"+line+"_dead_ends"], match:"1") then
+			if line > 0 and ml <= 6 and contains(styling["level_"+(line+1)+"_long_rooms"], match:"1")
+				then img := add_long_room(img:img, x:1, y:line, e:walls[1], s:s)
+			else img := add_door(img:img, x:1, y:line, c:0.5*(walls[0]+walls[1]), s:s)
+		if len >= 3 and not contains(styling["level_"+line+"_dead_ends"], match:"2") then
+			if line > 0 and ml <= 6 and contains(styling["level_"+(line+1)+"_long_rooms"], match:"2")
+				then img := add_long_room(img:img, x:2, y:line, e:walls[2], s:s)
+			else img := add_door(img:img, x:2, y:line, c:0.5*(walls[1]+walls[2]), s:s)
+		if len >= 4 and not contains(styling["level_"+line+"_dead_ends"], match:"3") then
+			if line > 0 and ml <= 6 and contains(styling["level_"+(line+1)+"_long_rooms"], match:"3")
+				then img := add_long_room(img:img, x:3, y:line, e:walls[3], s:s)
+			else img := add_door(img:img, x:3, y:line, c:0.5*(walls[2]+walls[3]), s:s)
+		if len >= 5 and not contains(styling["level_"+line+"_dead_ends"], match:"4") then
+			if line > 0 and ml <= 6 and contains(styling["level_"+(line+1)+"_long_rooms"], match:"4")
+				then img := add_long_room(img:img, x:4, y:line, e:walls[4], s:s)
+			else img := add_door(img:img, x:4, y:line, c:0.5*(walls[3]+walls[4]), s:s)
+		img
+	}
+	add_long_room := {
+		blocks := to_string(round_up(box_w(x:x, y:y)/20))
+		x:= 20*(max_len - e)
+		mask_img := wall_crop("new_masks/"+s+"lane"+blocks+".png", offset:380-line_offset(y), x:x)
+		masked_blend(dark:img, light:black, mask:mask_img)
+	}
+	door_offset := {
+		if y == 0 or styling["level_"+y+"_door_offsets"] == "" then 0 else to_int(pull_comma_array(styling["level_"+y+"_door_offsets"], cell:x-1, end:false, default:0))
+	}
+	add_door := {
+		x := 20*(max_len - c)-22-door_offset(x:x, y:y)
+		mask_img := wall_crop("new_masks/"+s+"door.png", offset:380-line_offset(y), x:x)
+		masked_blend(dark:img, light:black, mask:mask_img)		
+	}
+	# make vertical mask
+	dungeon_walls := {
+		ml := max_level()
+		walls := add_level_walls(img:black, line:1, s:s)
+		if ml >= 2 then walls := add_level_walls(img:walls, line:2, s:s)
+		if ml >= 3 then walls := add_level_walls(img:walls, line:3, s:s)
+		if ml >= 4 then walls := add_level_walls(img:walls, line:4, s:s)
+		if ml >= 5 then walls := add_level_walls(img:walls, line:5, s:s)
+		if ml >= 6 then walls := add_level_walls(img:walls, line:6, s:s)
+		if ml >= 7 then walls := add_level_walls(img:walls, line:7, s:s)
+		walls
+	}
+	add_level_walls := {
+		walls := sort_list(span_array(line), remove_duplicates:true)
+		blocks := to_string(line_height(line) / 20)
+		exits := if line == 0 or line > max_level() then 0 else styling["level_"+line+"_exits"]
+		wall := "new_masks/"+s+"wall_"+blocks+".png"
+		door := "new_masks/"+s+"wall_"+blocks+"o.png"
+		len := length(walls)
+		y := 380-line_offset(line)
+		if len > 0 then (
+			x := 320 - 20*walls[0]
+			slug := if contains(exits, match:"1") then door else wall
+			mask_img := wall_crop(slug, offset:y, x:x)
+			img := masked_blend(dark:img, light:white, mask:mask_img)
+		)
+		if len > 1 then (
+			x := 320 - 20*walls[1]
+			slug := if contains(exits, match:"2") then door else wall
+			mask_img := wall_crop(slug, offset:y, x:x)
+			img := masked_blend(dark:img, light:white, mask:mask_img)
+		)
+		if len > 2 then (
+			x := 320 - 20*walls[2]
+			slug := if contains(exits, match:"3") then door else wall
+			mask_img := wall_crop(slug, offset:y, x:x)
+			img := masked_blend(dark:img, light:white, mask:mask_img)
+		)
+		if len > 3 then (
+			x := 320 - 20*walls[3]
+			slug := if contains(exits, match:"4") then door else wall
+			mask_img := wall_crop(slug, offset:y, x:x)
+			img := masked_blend(dark:img, light:white, mask:mask_img)
+		)
+		img
+	}
+	
+	use_fast := {not styling.advanced_scripts}
+	walls_image := {if use_fast() then walls_image_fast(input) else walls_image_slow(input)}
+	walls_image_fast := {
+		## for loop didnt work for some reason???
+		ml := max_level()
+		img := lane_mask(input, img:to_image("base.png"), line:to_int(0))
+		img := lane_mask(input, img:img, line:to_int(1))
+		if ml >= 1 then img := lane_mask(input, img:img, line:2)
+		if ml >= 2 then img := lane_mask(input, img:img, line:3)
+		if ml >= 3 then img := lane_mask(input, img:img, line:4)
+		if ml >= 4 then img := lane_mask(input, img:img, line:5)
+		if ml >= 5 then img := lane_mask(input, img:img, line:6)
+		if ml >= 6 then img := lane_mask(input, img:img, line:7)
+		if ml >= 7 then img := lane_mask(input, img:img, line:8)
+		if ml >= 1 then img := wall_mask(input, img:img, line:1)
+		if ml >= 2 then img := wall_mask(input, img:img, line:2)
+		if ml >= 3 then img := wall_mask(input, img:img, line:3)
+		if ml >= 4 then img := wall_mask(input, img:img, line:4)
+		if ml >= 5 then img := wall_mask(input, img:img, line:5)
+		if ml >= 6 then img := wall_mask(input, img:img, line:6)
+		if ml >= 7 then img := wall_mask(input, img:img, line:7)
+		if ml >= 1 then img := door_mask(input, img:img, line:1)
+		if ml >= 2 then img := door_mask(input, img:img, line:2)
+		if ml >= 3 then img := door_mask(input, img:img, line:3)
+		if ml >= 4 then img := door_mask(input, img:img, line:4)
+		if ml >= 5 then img := door_mask(input, img:img, line:5)
+		if ml >= 6 then img := door_mask(input, img:img, line:6)
+		if ml >= 7 then img := door_mask(input, img:img, line:7)
+		if ml >= 0 then img := dead_mask(input, img:img, line:0)
+		if ml >= 1 then img := dead_mask(input, img:img, line:1)
+		if ml >= 2 then img := dead_mask(input, img:img, line:2)
+		if ml >= 3 then img := dead_mask(input, img:img, line:3)
+		if ml >= 4 then img := dead_mask(input, img:img, line:4)
+		if ml >= 5 then img := dead_mask(input, img:img, line:5)
+		if ml >= 6 then img := dead_mask(input, img:img, line:6)
+		if ml >= 7 then img := dead_mask(input, img:img, line:7)
+		if input == ""
+			then img := set_mask(image: walls_background(card.card_color), mask:img)
+		else img := set_mask(image:"base.png", mask:img)
+		
+		img
+	}
+	dead_mask := {
+		lanes := line_lanes(line)
+		next := line_lanes(line+1)
+		base := lane_mask_base[lanes][next]
+		rooms := sort_text(filter_text(styling["level_"+line+"_dead_ends"], match:"[0-9]"))
+		tail := for x from 0 to length(rooms)-1 do (if rooms[x] == "1" then "e1" else if rooms[x] == "2" and base > 1 then "e2" else if rooms[x] == "3" and base > 2 then "e3" else if rooms[x] == "4" and base > 3 then "e4" else "")
+		file := input + "lane_masks/" + base + tail + ".png"
+		if tail == "" or tail == nil
+			then img
+		else masked_blend(dark:img, light:"walls.png" mask:wall_crop(file, offset:380-line_offset(line)))
+	}
+	lane_mask := {
+		lanes := line_lanes(line)
+		next := line_lanes(line+1)
+		base := lane_mask_base[lanes][next]
+		file := input+"lane_masks/"+base
+		if line > 0 and line < 7 and lanes > 1 and lanes == next then file := file + long_map(long_lanes(line))
+		mask_img := wall_crop(file+".png", offset:380-line_offset(line))
+		masked_blend(dark:img, light:"walls.png", mask:mask_img)
+	}
+	wall_mask := {
+		base := line_lanes(line)
+		blocks := line_height(line) / 20
+		if line > max_level() then blocks := line_height(line-1) / 20
+		mask_img := wall_crop(input+"wall_masks/"+base+"_"+blocks+".png", offset:380-line_offset(line))
+		masked_blend(dark:img, light:"walls.png", mask:mask_img)
+	}
+	door_mask := {
+		exits := sort_text(filter_text(styling["level_"+line+"_exits"], match:"[0-9]"))
+		verify := line_lanes(line) + "_" + exits
+		off := 380 - line_offset(line) + (0.5*line_height(line)) - 20
+		if door_check(verify) or else false
+			then masked_blend(dark:img, light:"base.png", mask:wall_crop(input+"door_masks/"+verify+".png", offset:off))
+		else img
+	}
+	
+	long_lanes := {["", styling.level_2_long_rooms, styling.level_3_long_rooms, styling.level_4_long_rooms, styling.level_5_long_rooms, styling.level_6_long_rooms, styling.level_7_long_rooms][input]}
+	lane_mask_base := [
+		[""],
+		["", "1", "2", "3"],
+		["", "2", "2", "4"],
+		["", "3", "4", "3"]
+	]
+	long_map := {
+		[
+		"none": "",
+		"room 1": "d1",
+		"room 2": "d2",
+		"room 3": "d3",
+		"rooms 1 and 2": "d1d2",
+		"rooms 1 and 3": "d1d3",
+		"rooms 2 and 3": "d2d3"
+		][input]
+	}
+
+	door_check := {
+		[
+		"1_1": true,
+		"1_2": true,
+		"1_12": true,
+		"2_1": true,
+		"2_2": true,
+		"2_3": true,
+		"2_12": true,
+		"2_13": true,
+		"2_23": true,
+		"2_123": true,
+		"3_1": true,
+		"3_2": true,
+		"3_3": true,
+		"3_4": true,
+		"3_12": true,
+		"3_13": true,
+		"3_14": true,
+		"3_23": true,
+		"3_24": true,
+		"3_34": true,
+		"3_123": true,
+		"3_124": true,
+		"3_134": true,
+		"3_234": true,
+		"3_1234": true
+		][input]
+	}
+
+############################################################## Set info fields
+styling field:
+	type: choice
+	name: Click here for help!
+	choice: Click here for help!
+	choice: Room counts -
+	choice: Put the number of rooms in each level, separated by commas, "1,2,3,1"
+	choice: Room heights -
+	choice: Room heights try to automate but can be modified
+	choice: Put the number of blocks each level is, with commas, "5,5,4,5,"
+	choice: Or leave a spot blank to keep the default number. 19 blocks total.
+	choice: If the maze doesnt reach the bottom, make sure this ends in a comma
+	choice: Long rooms - 
+	choice: These dropdowns will make rooms continuations of the room above them
+	choice: These can be as long as you want. Level above has to be the same number of rooms.
+	choice: Exits - 
+	choice: These open vertical doors in that level of the dungeon in the numbered wall
+	choice: The left border is 1, next wall is 2, and so on
+	choice: So to make a two room level connect, type "2" here
+styling field:
+	type: text
+	name: room counts
+	description: The number of rooms on each level, 1, 2, or 3.
+styling field:
+	type: text
+	name: room heights
+	description: The height in blocks of each level. Min 2, max 15, total 19.
+styling field:
+	type: boolean
+	name: reminder box
+	initial: no
+	description: Move the dungeon to make room for reminder text, like The Undercity?
+styling field:
+	type: text
+	name: font size
+	description: Font size for the rooms. Default is 12.
+styling field:
+	type: boolean
+	name: arrows
+	description: Use arrows between rooms
+styling field:
+	type: boolean
+	name: custom floor
+	initial: no
+	description: Upload a custom image to replace the default floor.
+styling field:
+	type: choice
+	name: level 2 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: choice
+	name: level 3 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: choice
+	name: level 4 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: choice
+	name: level 5 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: choice
+	name: level 6 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: choice
+	name: level 7 long rooms
+	choice: none
+	choice: room 1
+	choice: room 2
+	choice: room 3
+	choice: rooms 1 and 2
+	choice: rooms 1 and 3
+	choice: rooms 2 and 3
+styling field:
+	type: text
+	name: level 0 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 1 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 2 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 3 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 4 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 5 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 6 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 7 dead ends
+	description: List of doors out of this level to close, eg "12"
+styling field:
+	type: text
+	name: level 1 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 2 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 3 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 4 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 5 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 6 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: text
+	name: level 7 exits
+	description: Walls to put vertical doors on.
+styling field:
+	type: choice
+	name: advanced help
+	choice: These options below may cause editing the template to be slower
+	choice: Use the setting below to toggle if they apply or not
+	choice: You can fill in the numbers and then turn it on after
+	choice: Custom widths - 
+	choice: Set rooms in a level's width, separated by commas, "10,6,"
+	choice: Door offsets - 
+	choice: Move door openings on a level X pixels right, separated by commas, "10,0,-10"
+	choice: Negative numbers move left
+styling field:
+	type: boolean
+	name: advanced scripts
+	initial: no
+	description: Toggle Custom Widths and Door Offsets
+styling field:
+	type: text
+	name: level 1 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 2 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 3 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 4 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 5 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 6 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 7 custom widths
+	description: Make rooms a different number of blocks wide, for example "10,6," for a double sized room
+styling field:
+	type: text
+	name: level 1 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 2 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 3 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 4 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 5 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 6 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: text
+	name: level 7 door offsets
+	description: Move doors X pixels right (use negative for left). A block is 20px
+styling field:
+	type: boolean
+	name: remove from autocount
+	description: Removes the automatic card number for specific cards, to allow for overcounted cards like in Planeswalker Decks.
+	initial: no
+styling field:
+	type: text
+	name: shrink name text
+	description: Reduces the name text N points.
+styling field:
+	type: package choice
+	name: text box mana symbols
+	match: magic-mana-*.mse-symbol-font
+	initial: magic-mana-small.mse-symbol-font
+styling field:
+	type: boolean
+	name: promo
+	description: Is this card a promo card, with the "P" rarity?
+	initial: no
+styling field:
+	type: boolean
+	name: use guild mana symbols
+	description: Use the Ravnica guild symbols instead of the official half/half circles for hybrid mana.
+	initial: no
+styling field:
+	type: choice
+	name: tap symbol
+	description: What tap and untap symbols should be used on cards?
+	initial: modern
+	choice: modern
+	choice: old
+	choice: diagonal T
+
+############################################################## Card fields
+card style:
+	border color:
+		left: 0
+		top : 0
+		width:	375
+		height:	523
+		radius: 18
+		left width:   17
+		right width:  17
+		top width:    17
+		bottom width: 18
+		z index: 4
+		mask: border_mask.png
+	card color:
+		left: 0
+		top: 0
+		width: 375
+		height: 523
+		z index: 0
+		render style: image
+		popup style: in place
+		image: {card_background()}
+	name:
+		left: 30
+		top: 24
+		width: 315
+		height: {28 - (0.5 * shrink_name())}
+		alignment: middle center
+		padding bottom: -2
+		padding top: 2
+		z index: 5
+		font:
+			name: Beleren Small Caps Bold
+			size: { 17 - shrink_name()}
+			color: rgb(222,222,222)
+	############################# Image
+	############################# Textboxes
+	rule text:
+		left: {box_x(x:1, y:1)}
+		top: {box_y(x:1, y:1)}
+		width: {box_w(x:1, y:1)}
+		height: {box_h(x:1, y:1)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 1 text:
+		left: {box_x(x:2, y:1)}
+		top: {box_y(x:2, y:1)}
+		width: {box_w(x:2, y:1)}
+		height: {box_h(x:2, y:1)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 2 text:
+		left: {box_x(x:3, y:1)}
+		top: {box_y(x:3, y:1)}
+		width: {box_w(x:3, y:1)}
+		height: {box_h(x:3, y:1)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 3 text:
+		left: {box_x(x:1, y:2)}
+		top: {box_y(x:1, y:2)}
+		width: {box_w(x:1, y:2)}
+		height: {box_h(x:1, y:2)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 4 text:
+		left: {box_x(x:2, y:2)}
+		top: {box_y(x:2, y:2)}
+		width: {box_w(x:2, y:2)}
+		height: {box_h(x:2, y:2)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 5 text:
+		left: {box_x(x:3, y:2)}
+		top: {box_y(x:3, y:2)}
+		width: {box_w(x:3, y:2)}
+		height: {box_h(x:3, y:2)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 6 text:
+		left: {box_x(x:1, y:3)}
+		top: {box_y(x:1, y:3)}
+		width: {box_w(x:1, y:3)}
+		height: {box_h(x:1, y:3)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 7 text:
+		left: {box_x(x:2, y:3)}
+		top: {box_y(x:2, y:3)}
+		width: {box_w(x:2, y:3)}
+		height: {box_h(x:2, y:3)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 8 text:
+		left: {box_x(x:3, y:3)}
+		top: {box_y(x:3, y:3)}
+		width: {box_w(x:3, y:3)}
+		height: {box_h(x:3, y:3)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 9 text:
+		left: {box_x(x:1, y:4)}
+		top: {box_y(x:1, y:4)}
+		width: {box_w(x:1, y:4)}
+		height: {box_h(x:1, y:4)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 10 text:
+		left: {box_x(x:2, y:4)}
+		top: {box_y(x:2, y:4)}
+		width: {box_w(x:2, y:4)}
+		height: {box_h(x:2, y:4)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 11 text:
+		left: {box_x(x:3, y:4)}
+		top: {box_y(x:3, y:4)}
+		width: {box_w(x:3, y:4)}
+		height: {box_h(x:3, y:4)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 12 text:
+		left: {box_x(x:1, y:5)}
+		top: {box_y(x:1, y:5)}
+		width: {box_w(x:1, y:5)}
+		height: {box_h(x:1, y:5)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 13 text:
+		left: {box_x(x:2, y:5)}
+		top: {box_y(x:2, y:5)}
+		width: {box_w(x:2, y:5)}
+		height: {box_h(x:2, y:5)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 14 text:
+		left: {box_x(x:3, y:5)}
+		top: {box_y(x:3, y:5)}
+		width: {box_w(x:3, y:5)}
+		height: {box_h(x:3, y:5)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 15 text:
+		left: {box_x(x:1, y:6)}
+		top: {box_y(x:1, y:6)}
+		width: {box_w(x:1, y:6)}
+		height: {box_h(x:1, y:6)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 16 text:
+		left: {box_x(x:2, y:6)}
+		top: {box_y(x:2, y:6)}
+		width: {box_w(x:2, y:6)}
+		height: {box_h(x:2, y:6)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 17 text:
+		left: {box_x(x:3, y:6)}
+		top: {box_y(x:3, y:6)}
+		width: {box_w(x:3, y:6)}
+		height: {box_h(x:3, y:6)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 18 text:
+		left: {box_x(x:1, y:7)}
+		top: {box_y(x:1, y:7)}
+		width: {box_w(x:1, y:7)}
+		height: {box_h(x:1, y:7)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	level 19 text:
+		left: {box_x(x:2, y:7)}
+		top: {box_y(x:2, y:7)}
+		width: {box_w(x:2, y:7)}
+		height: {box_h(x:2, y:7)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+
+	rule text 2:
+		left: {box_x(x:3, y:7)}
+		top: {box_y(x:3, y:7)}
+		width: {box_w(x:3, y:7)}
+		height: {box_h(x:3, y:7)}
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		padding top: 2
+		padding bottom: 2
+		padding left: 4
+		padding right: 6
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+
+	############################# Card sorting / numbering
+	set code:
+		left: 24
+		top: 498
+		width: 40
+		height: 10
+		z index: 1
+		font:
+			name: Relay-Medium
+			size: 7
+			color: white
+			weight: bold
+	############################# Copyright stuff
+	illustrator:
+		left: { 44 + card_style.set_code.content_width }
+		top: 497.5
+		width: 200
+		height: 10
+		z index: 4
+		font:
+			name: Beleren Small Caps Bold
+			size: 7.25
+			color: white
+	copyright:
+		right: 350
+		top: { if card.pt != "" then 500 else 488 }
+		width: 140
+		height: 10
+		z index: 2
+		visible: {not set.automatic_copyright}
+		alignment: middle right shrink-overflow
+		font:
+			name: Matrix
+			size: 7
+			color: white
+			weight: bold
+############################################################## Extra card fields
+extra card field:
+	type: text
+	name: card code
+	save value: false
+	script:
+		if set.automatic_card_numbers and not styling.remove_from_autocount then
+			forward_editor(prefix: card_number_m15() + "/" + card_count_m15() + " " + rarity_code() + " ", field: card.card_code_text)
+		else
+			combined_editor(field1: card.custom_card_number, separator: " " + rarity_code() + " ", field2: card.card_code_text)
+extra card field:
+	type: text
+	name: reminder
+	multi line: true
+	editable: true
+	save value: true
+	script: base_filter(input: value, card_name: if set.alias_as_cardname and card.alias != "" then card.alias else card.name, margin_code:"reminder")
+extra card field:
+	type: choice
+	name: walls
+	editable: false
+	save value: false
+	script: card.card_color
+extra card field:
+	type: choice
+	name: texture
+	editable: false
+	save value: false
+	choice: texture
+extra card field:
+	type: choice
+	name: shadows
+	editable: false
+	save value: false
+	choice: wall
+extra card field:
+	type: text
+	name: auto copyright
+	script: set.copyright
+	save value: false
+	editable: false
+	show statistics: false
+extra card field:
+	type: choice
+	name: artist arrow
+	editable: false
+	save value: false
+	choice: white
+extra card field:
+	type: choice
+	name: grid
+	editable: false
+	save value: false
+	script: card.card_color
+extra card field:
+	type: choice
+	name: floor
+	editable: false
+	save value: false
+	choice: floor
+extra card field:
+	type: image
+	name: false floor
+	editable: true
+	save value: true
+extra card field:
+	type: choice
+	name: arrow 01
+	editable: true
+	default: door_direction(x:1, y:1)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 1 out
+extra card field:
+	type: choice
+	name: arrow 14
+	editable: true
+	default: arrow_direction(x:1, y:1)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 1 to room 4
+extra card field:
+	type: choice
+	name: arrow 12
+	editable: true
+	default: door_direction(x:2, y:1)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 1 to room 2
+extra card field:
+	type: choice
+	name: arrow 25
+	editable: true
+	default: arrow_direction(x:2, y:1)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 2 to room 5
+extra card field:
+	type: choice
+	name: arrow 23
+	editable: true
+	default: door_direction(x:3, y:1)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 2 to room 3
+extra card field:
+	type: choice
+	name: arrow 36
+	editable: true
+	default: arrow_direction(x:3, y:1)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 3 to room 6
+extra card field:
+	type: choice
+	name: arrow 30
+	editable: true
+	default: door_direction(x:5, y:1)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 3 out
+	
+extra card field:
+	type: choice
+	name: arrow 04
+	editable: true
+	default: door_direction(x:1, y:2)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 4 out
+extra card field:
+	type: choice
+	name: arrow 47
+	editable: true
+	default: arrow_direction(x:1, y:2)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 4 to room 7
+extra card field:
+	type: choice
+	name: arrow 45
+	editable: true
+	default: door_direction(x:2, y:2)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 4 to room 5
+extra card field:
+	type: choice
+	name: arrow 58
+	editable: true
+	default: arrow_direction(x:2, y:2)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 5 to room 8
+extra card field:
+	type: choice
+	name: arrow 56
+	editable: true
+	default: door_direction(x:3, y:2)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 5 to room 6
+extra card field:
+	type: choice
+	name: arrow 69
+	editable: true
+	default: arrow_direction(x:3, y:2)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 6 to room 9
+extra card field:
+	type: choice
+	name: arrow 60
+	editable: true
+	default: door_direction(x:5, y:2)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 6 out
+
+extra card field:
+	type: choice
+	name: arrow 07
+	editable: true
+	default: door_direction(x:1, y:3)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 7 out
+extra card field:
+	type: choice
+	name: arrow 710
+	editable: true
+	default: arrow_direction(x:1, y:3)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 7 to room 10
+extra card field:
+	type: choice
+	name: arrow 78
+	editable: true
+	default: door_direction(x:2, y:3)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 7 to room 8
+extra card field:
+	type: choice
+	name: arrow 811
+	editable: true
+	default: arrow_direction(x:2, y:3)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 8 to room 11
+extra card field:
+	type: choice
+	name: arrow 89
+	editable: true
+	default: door_direction(x:3, y:3)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 8 to room 9
+extra card field:
+	type: choice
+	name: arrow 912
+	editable: true
+	default: arrow_direction(x:3, y:3)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 9 to room 12
+extra card field:
+	type: choice
+	name: arrow 90
+	editable: true
+	default: door_direction(x:5, y:3)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 9 out
+	
+extra card field:
+	type: choice
+	name: arrow 010
+	editable: true
+	default: door_direction(x:1, y:4)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 10 out
+extra card field:
+	type: choice
+	name: arrow 1013
+	editable: true
+	default: arrow_direction(x:1, y:4)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 10 to room 13
+extra card field:
+	type: choice
+	name: arrow 1011
+	editable: true
+	default: door_direction(x:2, y:4)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 10 to room 11
+extra card field:
+	type: choice
+	name: arrow 1114
+	editable: true
+	default: arrow_direction(x:2, y:4)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 11 to room 14
+extra card field:
+	type: choice
+	name: arrow 1112
+	editable: true
+	default: door_direction(x:3, y:4)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 11 to room 12
+extra card field:
+	type: choice
+	name: arrow 1215
+	editable: true
+	default: arrow_direction(x:3, y:4)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 12 to room 15
+extra card field:
+	type: choice
+	name: arrow 120
+	editable: true
+	default: door_direction(x:5, y:4)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 12 out
+
+extra card field:
+	type: choice
+	name: arrow 012
+	editable: true
+	default: door_direction(x:1, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 12 out
+extra card field:
+	type: choice
+	name: arrow 1316
+	editable: true
+	default: arrow_direction(x:1, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 13 to room 16
+extra card field:
+	type: choice
+	name: arrow 1314
+	editable: true
+	default: door_direction(x:2, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 13 to room 14
+extra card field:
+	type: choice
+	name: arrow 1417
+	editable: true
+	default: arrow_direction(x:2, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 14 to room 17
+extra card field:
+	type: choice
+	name: arrow 1415
+	editable: true
+	default: door_direction(x:3, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 14 to room 15
+extra card field:
+	type: choice
+	name: arrow 1518
+	editable: true
+	default: arrow_direction(x:3, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 15 to room 18
+extra card field:
+	type: choice
+	name: arrow 150
+	editable: true
+	default: door_direction(x:5, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 15 out
+
+extra card field:
+	type: choice
+	name: arrow 013
+	editable: true
+	default: door_direction(x:1, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 13 out
+extra card field:
+	type: choice
+	name: arrow 1316
+	editable: true
+	default: arrow_direction(x:1, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 13 to room 16
+extra card field:
+	type: choice
+	name: arrow 1314
+	editable: true
+	default: door_direction(x:2, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 13 to room 14
+extra card field:
+	type: choice
+	name: arrow 1417
+	editable: true
+	default: arrow_direction(x:2, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 14 to room 17
+extra card field:
+	type: choice
+	name: arrow 1415
+	editable: true
+	default: door_direction(x:3, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 14 to room 15
+extra card field:
+	type: choice
+	name: arrow 1518
+	editable: true
+	default: arrow_direction(x:3, y:5)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 15 to room 18
+extra card field:
+	type: choice
+	name: arrow 150
+	editable: true
+	default: door_direction(x:5, y:5)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 15 out
+
+extra card field:
+	type: choice
+	name: arrow 016
+	editable: true
+	default: door_direction(x:1, y:6)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 16 out
+extra card field:
+	type: choice
+	name: arrow 1619
+	editable: true
+	default: arrow_direction(x:1, y:6)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 16 to room 19
+extra card field:
+	type: choice
+	name: arrow 1617
+	editable: true
+	default: door_direction(x:2, y:6)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 16 to room 17
+extra card field:
+	type: choice
+	name: arrow 1720
+	editable: true
+	default: arrow_direction(x:2, y:6)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 17 to room 20
+extra card field:
+	type: choice
+	name: arrow 1718
+	editable: true
+	default: door_direction(x:3, y:6)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 17 to room 18
+extra card field:
+	type: choice
+	name: arrow 1821
+	editable: true
+	default: arrow_direction(x:3, y:6)
+	choice: down
+	choice: up
+	choice: updown
+	choice: none
+	description: The arrow from room 18 to room 21
+extra card field:
+	type: choice
+	name: arrow 180
+	editable: true
+	default: door_direction(x:5, y:6)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 18 out
+
+extra card field:
+	type: choice
+	name: arrow 019
+	editable: true
+	default: door_direction(x:1, y:7)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 19 out
+extra card field:
+	type: choice
+	name: arrow 1920
+	editable: true
+	default: door_direction(x:2, y:7)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 19 to room 20
+extra card field:
+	type: choice
+	name: arrow 2021
+	editable: true
+	default: door_direction(x:3, y:7)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 20 to room 21
+extra card field:
+	type: choice
+	name: arrow 210
+	editable: true
+	default: door_direction(x:5, y:7)
+	choice: left
+	choice: right
+	choice: leftright
+	choice: none
+	description: The arrow from room 21 out
+
+extra card field:
+	type: choice
+	name: arrow 1e
+	editable: true
+	default: arrow_direction(x:4, y:1)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 1
+extra card field:
+	type: choice
+	name: arrow 2e
+	editable: true
+	default: arrow_direction(x:4, y:2)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 2
+extra card field:
+	type: choice
+	name: arrow 3e
+	editable: true
+	default: arrow_direction(x:4, y:3)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 3
+extra card field:
+	type: choice
+	name: arrow 4e
+	editable: true
+	default: arrow_direction(x:4, y:4)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 4
+extra card field:
+	type: choice
+	name: arrow 5e
+	editable: true
+	default: arrow_direction(x:4, y:5)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 5
+extra card field:
+	type: choice
+	name: arrow 6e
+	editable: true
+	default: arrow_direction(x:4, y:6)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 6
+extra card field:
+	type: choice
+	name: arrow 7e
+	editable: true
+	default: arrow_direction(x:4, y:7)
+	choice: up
+	choice: down
+	choice: updown
+	choice: none
+	description: The fourth arrow for level 7
+
+extra card style:
+	card code:
+		left: 24
+		top: 488
+		width: 120
+		height: 10
+		z index: 1
+		font:
+			name: Relay-Medium
+			size: 7
+			color: white
+			weight: bold
+	reminder:
+		left: 24
+		top: 62
+		width: {if styling.reminder_box then 327 else 0}
+		height: 27
+		z index: 3
+		font:
+			name: MPlantin
+			italic name: MPlantin-Italic
+			size: {font_size()}
+			scale down to: 6
+			color: black
+		symbol font:
+			name: { styling.text_box_mana_symbols }
+			size: {font_size()}
+			scale down to: 6
+		alignment: middle center
+		z index: 2
+		line height hard: 0.9
+		line height line: 0.9
+		line height soft: 0.9
+		line height hard max: 0.9
+		line height line max: 0.9
+	artist arrow:
+		left: { 28 + card_style.set_code.content_width }
+		top: 500
+		width: {if styling.custom_floor then 12 else 0}
+		height: 7
+		z index: 4
+		render style: image
+		image: artist_arrow.png
+	auto copyright:
+		right: 350
+		top: { if card.pt != "" then 500 else 488 }
+		width: 140
+		height: 10
+		z index: 2
+		alignment: middle right shrink-overflow
+		visible: {set.automatic_copyright}
+		font:
+			name: Matrix
+			size: 7
+			color: white
+			weight: bold
+	grid:
+		left: 22
+		top: {max_start()-5}
+		width: 331
+		height: 391
+		z index: 1
+		render style: image
+		image: {grid_background()}
+	floor:
+		left: 22
+		top: {max_start()-5}
+		width: 331
+		height: 391
+		z index: 0
+		render style: image
+		image: grid/floor.png
+	false floor:
+		left: 22
+		top: {max_start()-5}
+		width: {if styling.custom_floor then 331 else 0}
+		height: 391
+		z index: 0
+	walls:
+		left: 24
+		top: {max_start()-3}
+		width: 327
+		height: 387
+		render style: image
+		image: {walls_image("")}
+		z index: 4
+	texture:
+		left: 24
+		top: {max_start()-3}
+		width: 327
+		height: 387
+		render style: image
+		image: {if use_fast() then walls_image("texture/") else ""}
+		z index: 5
+	shadows:
+		left: 24
+		top: {max_start()-3}
+		width: 327
+		height: 387
+		render style: image
+		image: {walls_image("shadow/")}
+		z index: 3
+	arrow 01:
+		left: {door_x(x:1, y:1)}
+		top: {door_y(x:1, y:1)}
+		width: {if door_x(x:1, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 14:
+		left: {arrow_x(x:1, y:1)}
+		top: {arrow_y(x:1, y:1)}
+		width: {if arrow_x(x:1, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 12:
+		left: {door_x(x:2, y:1)}
+		top: {door_y(x:2, y:1)}
+		width: {if door_x(x:2, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 25:
+		left: {arrow_x(x:2, y:1)}
+		top: {arrow_y(x:2, y:1)}
+		width: {if arrow_x(x:2, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 23:
+		left: {door_x(x:3, y:1)}
+		top: {door_y(x:3, y:1)}
+		width: {if door_x(x:3, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 36:
+		left: {arrow_x(x:3, y:1)}
+		top: {arrow_y(x:3, y:1)}
+		width: {if arrow_x(x:3, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 30:
+		left: {door_x(x:5, y:1)}
+		top: {door_y(x:5, y:1)}
+		width: {if door_x(x:5, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 04:
+		left: {door_x(x:1, y:2)}
+		top: {door_y(x:1, y:2)}
+		width: {if door_x(x:1, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 47:
+		left: {arrow_x(x:1, y:2)}
+		top: {arrow_y(x:1, y:2)}
+		width: {if arrow_x(x:1, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 45:
+		left: {door_x(x:2, y:2)}
+		top: {door_y(x:2, y:2)}
+		width: {if door_x(x:2, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 58:
+		left: {arrow_x(x:2, y:2)}
+		top: {arrow_y(x:2, y:2)}
+		width: {if arrow_x(x:2, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 56:
+		left: {door_x(x:3, y:2)}
+		top: {door_y(x:3, y:2)}
+		width: {if door_x(x:3, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 69:
+		left: {arrow_x(x:3, y:2)}
+		top: {arrow_y(x:3, y:2)}
+		width: {if arrow_x(x:3, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 60:
+		left: {door_x(x:5, y:2)}
+		top: {door_y(x:5, y:2)}
+		width: {if door_x(x:5, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 07:
+		left: {door_x(x:1, y:3)}
+		top: {door_y(x:1, y:3)}
+		width: {if door_x(x:1, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 710:
+		left: {arrow_x(x:1, y:3)}
+		top: {arrow_y(x:1, y:3)}
+		width: {if arrow_x(x:1, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 78:
+		left: {door_x(x:2, y:3)}
+		top: {door_y(x:2, y:3)}
+		width: {if door_x(x:2, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 811:
+		left: {arrow_x(x:2, y:3)}
+		top: {arrow_y(x:2, y:3)}
+		width: {if arrow_x(x:2, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 89:
+		left: {door_x(x:3, y:3)}
+		top: {door_y(x:3, y:3)}
+		width: {if door_x(x:3, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 912:
+		left: {arrow_x(x:3, y:3)}
+		top: {arrow_y(x:3, y:3)}
+		width: {if arrow_x(x:3, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 90:
+		left: {door_x(x:5, y:3)}
+		top: {door_y(x:5, y:3)}
+		width: {if door_x(x:5, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 010:
+		left: {door_x(x:1, y:4)}
+		top: {door_y(x:1, y:4)}
+		width: {if door_x(x:1, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1013:
+		left: {arrow_x(x:1, y:4)}
+		top: {arrow_y(x:1, y:4)}
+		width: {if arrow_x(x:1, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1011:
+		left: {door_x(x:2, y:4)}
+		top: {door_y(x:2, y:4)}
+		width: {if door_x(x:2, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1114:
+		left: {arrow_x(x:2, y:4)}
+		top: {arrow_y(x:2, y:4)}
+		width: {if arrow_x(x:2, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1112:
+		left: {door_x(x:3, y:4)}
+		top: {door_y(x:3, y:4)}
+		width: {if door_x(x:3, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1215:
+		left: {arrow_x(x:3, y:4)}
+		top: {arrow_y(x:3, y:4)}
+		width: {if arrow_x(x:3, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 120:
+		left: {door_x(x:5, y:4)}
+		top: {door_y(x:5, y:4)}
+		width: {if door_x(x:5, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 013:
+		left: {door_x(x:1, y:5)}
+		top: {door_y(x:1, y:5)}
+		width: {if door_x(x:1, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1316:
+		left: {arrow_x(x:1, y:5)}
+		top: {arrow_y(x:1, y:5)}
+		width: {if arrow_x(x:1, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1314:
+		left: {door_x(x:2, y:5)}
+		top: {door_y(x:2, y:5)}
+		width: {if door_x(x:2, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1417:
+		left: {arrow_x(x:2, y:5)}
+		top: {arrow_y(x:2, y:5)}
+		width: {if arrow_x(x:2, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1415:
+		left: {door_x(x:3, y:5)}
+		top: {door_y(x:3, y:5)}
+		width: {if door_x(x:3, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1518:
+		left: {arrow_x(x:3, y:5)}
+		top: {arrow_y(x:3, y:5)}
+		width: {if arrow_x(x:3, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 150:
+		left: {door_x(x:5, y:5)}
+		top: {door_y(x:5, y:5)}
+		width: {if door_x(x:5, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 016:
+		left: {door_x(x:1, y:6)}
+		top: {door_y(x:1, y:6)}
+		width: {if door_x(x:1, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1619:
+		left: {arrow_x(x:1, y:6)}
+		top: {arrow_y(x:1, y:6)}
+		width: {if arrow_x(x:1, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1617:
+		left: {door_x(x:2, y:6)}
+		top: {door_y(x:2, y:6)}
+		width: {if door_x(x:2, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1720:
+		left: {arrow_x(x:2, y:6)}
+		top: {arrow_y(x:2, y:6)}
+		width: {if arrow_x(x:2, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1718:
+		left: {door_x(x:3, y:6)}
+		top: {door_y(x:3, y:6)}
+		width: {if door_x(x:3, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1821:
+		left: {arrow_x(x:3, y:6)}
+		top: {arrow_y(x:3, y:6)}
+		width: {if arrow_x(x:3, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 180:
+		left: {door_x(x:5, y:6)}
+		top: {door_y(x:5, y:6)}
+		width: {if door_x(x:5, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 019:
+		left: {door_x(x:1, y:7)}
+		top: {door_y(x:1, y:7)}
+		width: {if door_x(x:1, y:7) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 1920:
+		left: {door_x(x:2, y:7)}
+		top: {door_y(x:2, y:7)}
+		width: {if door_x(x:2, y:7) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 2021:
+		left: {door_x(x:3, y:7)}
+		top: {door_y(x:3, y:7)}
+		width: {if door_x(x:3, y:7) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 210:
+		left: {door_x(x:5, y:7)}
+		top: {door_y(x:5, y:7)}
+		width: {if door_x(x:5, y:7) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+
+	arrow 1e:
+		left: {arrow_x(x:4, y:1)}
+		top: {arrow_y(x:4, y:1)}
+		width: {if arrow_x(x:4, y:1) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 2e:
+		left: {arrow_x(x:4, y:2)}
+		top: {arrow_y(x:4, y:2)}
+		width: {if arrow_x(x:4, y:2) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 3e:
+		left: {arrow_x(x:4, y:3)}
+		top: {arrow_y(x:4, y:3)}
+		width: {if arrow_x(x:4, y:3) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 4e:
+		left: {arrow_x(x:4, y:4)}
+		top: {arrow_y(x:4, y:4)}
+		width: {if arrow_x(x:4, y:4) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 5e:
+		left: {arrow_x(x:4, y:5)}
+		top: {arrow_y(x:4, y:5)}
+		width: {if arrow_x(x:4, y:5) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
+	arrow 6e:
+		left: {arrow_x(x:4, y:6)}
+		top: {arrow_y(x:4, y:6)}
+		width: {if arrow_x(x:4, y:6) == 0 or not styling.arrows then 0 else 20}
+		height: 20
+		render style: image
+		z index: 4
+		choice images:
+			up: arrowU.png
+			down: arrowD.png
+			updown: arrowUD.png
+			left: arrowL.png
+			right: arrowR.png
+			leftright: arrowLR.png
