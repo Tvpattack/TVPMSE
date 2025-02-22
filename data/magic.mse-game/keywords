@@ -1436,11 +1436,11 @@ keyword:
 	mode: action
 	reminder: {param1}, Exile this card from your graveyard: For each opponent, create a token copy that attacks that opponent this turn if able. They gain haste. Sacrifice them at the beginning of the next end step. Activate only as a sorcery.
 #Kaldheim
-keyword:
-	keyword: Shard token
-	match: Shard toke<atom-param>*s</atom-param>
-	mode: core
-	reminder: {if param1.value == "ns" then "They’re enchantments" else "It’s an enchantment"} with "2, Sacrifice this enchantment: Scry ]1[, then draw a card."
+#keyword:
+#	keyword: Shard token
+#	match: Shard toke<atom-param>*s</atom-param>
+#	mode: core
+#	reminder: {if param1.value == "ns" then "They’re enchantments" else "It’s an enchantment"} with "2, Sacrifice this enchantment: Scry ]1[, then draw a card."
 keyword:
 	keyword: Boast
 	match: Boast
